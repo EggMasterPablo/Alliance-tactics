@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tank Turn Tactics</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--line:#2a2f3a;--tx:#e8eaf0;--mut:#8b93a5;--acc:#ff5c39;--ok:#3ecf8e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}h1{margin:0 0 4px;letter-spacing:.05em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+input,select,textarea{width:100%;padding:10px;margin:4px 0 10px;background:#0f1115;color:var(--tx);border:1px solid var(--line);border-radius:8px;font:inherit}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;margin:2px}
+button.sec{background:#2a2f3a}button:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:14px;flex-wrap:wrap}.row>*{flex:1 1 280px}.mut{color:var(--mut)}.small{font-size:13px}
+#grid{display:grid;gap:2px;justify-content:center;--c:min(42px,calc(92vw / var(--n)))}
+.cell{width:var(--c);height:var(--c);background:#1d212b;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:calc(var(--c)*.4);position:relative;cursor:pointer}
+.cell.rng{background:#2b2431}.cell.adj{outline:1px dashed #555}.cell.sel{outline:2px solid #fff}
+.tok{width:82%;height:82%;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#000;font-weight:700}
+.tok.dead{background:#444!important;color:#aaa}.tok.me{box-shadow:0 0 0 2px #fff}
+.hp{position:absolute;bottom:-1px;right:1px;font-size:calc(var(--c)*.27);font-weight:700;color:#fff;text-shadow:0 0 3px #000}
+.log{max-height:240px;overflow:auto}.log div{padding:3px 0;border-bottom:1px solid var(--line)}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;background:#2a2f3a;margin-right:4px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#222;border:1px solid var(--line);padding:10px 16px;border-radius:8px;display:none;max-width:90vw}
+.shop{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px}i{color:#f5c542;font-style:normal;font-weight:600}</style></head><body><div class="wrap">
+<h1>💥 TANK TURN TACTICS</h1><div class="mut small">Survive. Make friends. Stab backs.</div><br>
+<div id="app"></div></div><div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S=null,sel=null,order=null,sess=JSON.parse(localStorage.getItem('ttt')||'null');
+const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2800)};
+async function api(p,body){const r=await fetch('/api/'+p,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);
+  const j=await r.json();if(!r.ok)throw j.error||'Error';return j}
+const val=id=>$('#'+id).value;
+async function enter(p,body){try{const j=await api(p,body);sess={code:j.code,token:j.token};localStorage.setItem('ttt',JSON.stringify(sess));refresh()}catch(e){toast(e)}}
+function leave(){localStorage.removeItem('ttt');sess=null;S=null;home()}
+let U=localStorage.getItem('tttu'),A=null,CAT=null;
+const nm=p=>`${p.icon?p.icon+' ':''}${p.title?`<i>${esc(p.title)}</i> `:''}${esc(p.name)}`;
+async function loadMe(){try{const j=await api('me?session='+U);A=j.account;CAT=j.catalog;return true}catch(e){U=null;localStorage.removeItem('tttu');return false}}
+async function authIt(kind){try{const j=await api(kind,{username:val('au'),password:val('ap')});U=j.session;localStorage.setItem('tttu',U);home()}catch(e){toast(e)}}
+function logout(){localStorage.removeItem('tttu');U=null;A=null;leave()}
+function openRoom(code,token){sess={code,token};localStorage.setItem('ttt',JSON.stringify(sess));refresh()}
+async function post(p,b){try{await api(p,{session:U,...b});return true}catch(e){toast(e);return false}}
+async function buy(k,id){if(await post('buy',{kind:k,id}))shop()}
+async function equip(k,id){if(await post('equip',{kind:k,id}))shop()}
+async function shop(){
+  if(!U||!(await loadMe()))return home();
+  const row=(k,it)=>{const own=A.owned.includes(k+':'+it.id),eq=A.equipped[k]===it.id;
+    return `<div class="card" style="margin:0;text-align:center"><div style="font-size:${k=='icon'?'30px':'15px'};min-height:38px">${k=='icon'?it.label:`<i>${esc(it.label)}</i>`}</div><div class="small mut">${it.cost} pts</div>
+    ${own?(eq?`<button class="sec" onclick="equip('${k}',null)">Unequip</button>`:`<button onclick="equip('${k}','${it.id}')">Equip</button>`):`<button ${A.points<it.cost?'disabled':''} onclick="buy('${k}','${it.id}')">Buy</button>`}</div>`};
+  $('#app').innerHTML=`<div class="card"><b>🛍 Shop</b> &nbsp; ⭐ <b>${A.points}</b> points <button class="sec" style="float:right" onclick="home()">Back</button>
+    <div class="small mut">Preview: ${nm({name:A.username,icon:(CAT.icon.find(x=>x.id==A.equipped.icon)||{}).label,title:(CAT.title.find(x=>x.id==A.equipped.title)||{}).label})}</div></div>
+    <h3>Icons <span class="mut small">(replace your letter on the board)</span></h3><div class="shop">${CAT.icon.map(x=>row('icon',x)).join('')}</div>
+    <h3>Titles <span class="mut small">(shown before your name)</span></h3><div class="shop">${CAT.title.map(x=>row('title',x)).join('')}</div>`}
+async function home(){
+  if(!U||!(await loadMe())){
+    $('#app').innerHTML=`<div class="card" style="max-width:380px;margin:auto"><h3>Log in or register</h3>
+    <label class="small mut">Username</label><input id="au" maxlength="16" autocomplete="username">
+    <label class="small mut">Password (6+ characters)</label><input id="ap" type="password" autocomplete="current-password">
+    <button onclick="authIt('login')">Log in</button><button class="sec" onclick="authIt('register')">Register</button>
+    <div class="small mut">Your account keeps your points, shop items and active games.</div></div>`;return}
+  let mine=[];try{mine=(await api('myrooms?session='+U)).rooms}catch{}
+  const e=A.equipped,ic=(CAT.icon.find(x=>x.id==e.icon)||{}).label,ti=(CAT.title.find(x=>x.id==e.title)||{}).label;
+  $('#app').innerHTML=`<div class="card">${nm({name:A.username,icon:ic,title:ti})} &nbsp; ⭐ <b>${A.points}</b> pts <span class="mut small">· ${A.stats.games} games · ${A.stats.wins} wins · ${A.stats.kills} kills</span>
+    <span style="float:right"><button onclick="shop()">🛍 Shop</button><button class="sec" onclick="logout()">Log out</button></span></div>
+  ${mine.length?`<div class="card"><b>Your games</b><br>${mine.map(r=>`<button class="sec" onclick="openRoom('${r.code}','${r.token}')">${r.code} · ${r.status}${r.status=='playing'&&!r.alive?' ☠':''} · ${r.players}p</button>`).join('')}</div>`:''}
+  <div class="row">
+  <div class="card"><h3>Create a room</h3>
+  <label class="small mut">Pace</label><select id="cm" onchange="$('#fm').style.display=this.value=='fast'?'block':'none'"><option value="daily">Real game: 1 AP per workday (runs for days)</option><option value="fast">Accelerated: whole game in a couple of hours</option></select>
+  <div id="fm" style="display:none"><label class="small mut">Minutes between AP ("a day" in-game). 10 = roughly a 2 hour match</label><input id="cf" type="number" value="10" min="1"></div>
+  <label class="small mut">Add bots (optional, 0-12)</label><input id="cb" type="number" value="0" min="0" max="12">
+  <button onclick="enter('create',{session:U,mode:val('cm'),fastMin:val('cf'),bots:val('cb')})">Create room</button></div>
+  <div class="card"><h3>🤖 Bot match</h3><div class="small mut">Play solo against bots. Starts instantly. Pays full points.</div>
+  <label class="small mut">Number of bots</label><input id="bn" type="number" value="5" min="1" max="12">
+  <label class="small mut">Pace (one in-game day every...)</label><select id="bp"><option value="2">2 min (blitz, ~30 min match)</option><option value="10" selected>10 min (accelerated, ~2 hour match)</option><option value="30">30 min (relaxed, ~6 hour match)</option></select>
+  <button onclick="enter('create',{session:U,mode:'fast',fastMin:val('bp'),bots:val('bn'),autostart:true})">Start bot match</button></div>
+  <div class="card"><h3>Join a room</h3><label class="small mut">Room code</label><input id="jc" maxlength="5" style="text-transform:uppercase">
+  <button onclick="enter('join',{session:U,code:val('jc')})">Join</button></div></div>
+  <div class="card small"><b>Rules:</b> 3 hearts, 0 AP, range 2. 1 AP each workday. Move (1), shoot in range (1), upgrade range (costs 1 AP, then 2, then 3... rising each time). Hearts only come from the daily spawn or gifts.
+  Kill = take their AP. Dead players form a jury and vote daily to haunt someone (no AP that day). Dead can be revived with a gifted heart.
+  A heart spawns daily - first to step on it gets +1. When 4 remain, survivors must agree on the placings. AP is secret!<br><br>
+  <b>Points:</b> 1st 60 · 2nd 40 · 3rd 30 · 4th 20 · everyone else 10 · First Blood +10 · +3 per kill. Spend them in the Shop on icons and titles.</div>`}
+async function refresh(){
+  if(!sess)return home();
+  try{S=await api(`state?code=${sess.code}&token=${sess.token}`);render()}
+  catch(e){if(e==='Room not found'||e==='You are not in this room'){toast(e);leave()}}
+}
+const P=id=>S.players.find(p=>p.id===id), me=()=>P(S.me);
+const dist=(a,b)=>Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y));
+async function act(b){try{const j=await api('act',{code:sess.code,token:sess.token,...b});toast(j.msg);refresh()}catch(e){toast(e)}}
+async function addBot(){try{await api('addbot',{code:sess.code,token:sess.token,count:1});refresh()}catch(e){toast(e)}}
+async function start(){try{await api('start',{code:sess.code,token:sess.token});refresh()}catch(e){toast(e)}}
+function render(){
+  const m=me(),a=S.players.filter(p=>p.alive);
+  let h=`<div class="card"><b>Room ${S.code}</b> <span class="pill">${S.status}</span>
+   <span class="mut small">Share this code with friends. ${S.mode=='fast'?`Accelerated: 1 AP every ~${S.fastMin} min.`:'1 AP per workday.'}</span>
+   <button class="sec" style="float:right" onclick="leave()">Leave view</button></div>`;
+  if(S.status=='lobby'){
+    h+=`<div class="card"><h3>Lobby (${S.players.length})</h3>${S.players.map(p=>`<span class="pill" style="border:1px solid ${p.color}">${nm(p)}</span>`).join('')}<br><br>
+    ${S.me==S.host?`<button onclick="start()">Start game</button><button class="sec" onclick="addBot()">+ Add bot</button>`:'<span class="mut">Waiting for host to start…</span>'}</div>`;
+  }else{
+    h+=`<div class="row"><div><div class="card"><div id="grid" style="--n:${S.size};grid-template-columns:repeat(${S.size},var(--c))">`;
+    for(let y=0;y<S.size;y++)for(let x=0;x<S.size;x++){
+      const p=S.players.find(q=>q.x==x&&q.y==y),d=Math.max(Math.abs(m.x-x),Math.abs(m.y-y));
+      let c='cell'+(m.alive&&d<=m.range?' rng':'')+(p&&p.id==sel?' sel':'')+(!p&&m.alive&&d==1?' adj':'');
+      let inner=S.heart&&S.heart.x==x&&S.heart.y==y?'💖':'';
+      if(p)inner=`<div class="tok${p.alive?'':' dead'}${p.id==S.me?' me':''}" style="background:${p.color}" title="${esc(p.name)}">${p.alive?(p.icon||esc(p.name[0].toUpperCase())):'☠'}</div><span class="hp">${p.alive?p.hearts:''}</span>`;
+      h+=`<div class="${c}" onclick="clickCell(${x},${y})">${inner}</div>`}
+    h+=`</div><div class="small mut" style="margin-top:8px">Tap an adjacent square to move (1 AP, diagonals ok). Tap a player to target. Shaded = in your range.</div></div></div><div>`;
+    h+=`<div class="card"><b>You: ${nm(m)}</b> ${m.alive?'':'<span class="pill">DEAD – jury</span>'}${S.haunted==S.me?'<span class="pill">👻 haunted today</span>':''}<br>
+     ❤️ ${m.hearts} &nbsp; ⚡ ${m.ap} AP &nbsp; 🎯 range ${m.range} &nbsp; ☠ ${m.kills} kills<br>
+     <button ${m.alive?'':'disabled'} onclick="act({type:'range'})">+Range (${m.range-1} AP)</button></div>`;
+    if(sel&&P(sel)&&sel!=S.me){const t=P(sel),d=dist(m,t);
+      h+=`<div class="card"><b>Target: ${nm(t)}</b> ${t.alive?'❤️'+t.hearts:'☠ dead'} · distance ${d} ${d<=m.range?'<span style="color:var(--ok)">(in range)</span>':'<span class="mut">(out of range)</span>'}<br>
+      ${m.alive&&t.alive?`<button onclick="act({type:'shoot',target:'${t.id}'})">Shoot (1)</button><button class="sec" onclick="act({type:'gift',what:'heart',target:'${t.id}'})">Gift ❤️</button><button class="sec" onclick="act({type:'gift',what:'ap',target:'${t.id}',amount:1})">Gift ⚡1</button>`:''}
+      ${m.alive&&!t.alive?`<button onclick="act({type:'gift',what:'heart',target:'${t.id}'})">Revive with ❤️</button>`:''}
+      ${!m.alive&&t.alive?`<button onclick="act({type:'vote',target:'${t.id}'})">Vote to haunt</button>${S.myVote==t.id?' ✓ your vote':''}`:''}</div>`}
+    if(S.status=='playing'&&a.length<=4&&m.alive){
+      const cur=S.proposals[S.me];if(!order||order.join()!=order.filter(i=>a.some(p=>p.id==i)).join()||order.length!=a.length)order=cur||a.map(p=>p.id);
+      h+=`<div class="card"><b>🏆 Agree on the placings</b><div class="small mut">Game ends when all survivors submit the same order.</div>
+      ${order.map((id,i)=>`<div>${i+1}. ${esc(P(id).name)} <button class="sec" onclick="mv(${i},-1)">↑</button><button class="sec" onclick="mv(${i},1)">↓</button></div>`).join('')}
+      <button onclick="act({type:'propose',order})">Submit</button>
+      <div class="small mut">${a.map(p=>`${esc(p.name)}: ${S.proposals[p.id]?S.proposals[p.id].map(i=>esc(P(i).name)).join(' > '):'—'}`).join('<br>')}</div></div>`}
+    h+=`</div></div>`;
+    h+=`<div class="card"><b>Players</b><br>${S.players.slice().sort((x,y)=>y.alive-x.alive||y.hearts-x.hearts).map(p=>`<span class="pill" style="cursor:pointer;border:1px solid ${p.color}" onclick="sel='${p.id}';render()">${p.alive?'':'☠ '}${nm(p)} ❤️${p.hearts} 🎯${p.range}${p.kills?' ☠'+p.kills:''}</span>`).join('')}</div>`;
+  }
+  if(S.status=='finished'){
+    const med=['🥇 1st','🥈 2nd','🥉 3rd','4th'];
+    h=`<div class="card"><h2>🏁 Game over</h2>${S.result.ranking.slice(0,4).map((id,i)=>`<div>${med[i]}: <b>${nm(P(id))}</b> ${S.result.points&&S.result.points[id]?`<span class="pill">+${S.result.points[id]} pts</span>`:''}</div>`).join('')}
+    ${S.firstBlood?`<div>🩸 First Blood: <b>${nm(P(S.firstBlood))}</b></div>`:''}<p class="mut">Points were added to player accounts. Spend them in the Shop (back to home).</p></div>`+h}
+  h+=`<div class="card"><b>Event log</b><div class="log small">${S.log.map(l=>`<div><span class="mut">${new Date(l.t).toLocaleString([], {weekday:'short',hour:'2-digit',minute:'2-digit'})}</span> ${esc(l.msg)}</div>`).join('')}</div></div>`;
+  $('#app').innerHTML=h;
+}
+function mv(i,d){const j=i+d;if(j<0||j>=order.length)return;[order[i],order[j]]=[order[j],order[i]];render()}
+function clickCell(x,y){
+  const p=S.players.find(q=>q.x==x&&q.y==y),m=me();
+  if(p){sel=p.id;return render()}
+  if(S.status=='playing'&&m.alive&&dist(m,{x,y})==1)act({type:'move',dx:x-m.x,dy:y-m.y});
+}
+refresh();setInterval(()=>{if(sess)refresh()},5000);
+</script></body></html>
